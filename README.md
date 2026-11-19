@@ -5,11 +5,35 @@ A Claude-desktop-style chat UI with a FastAPI backend that works with
 
 ## Run
 
+**Windows (PowerShell or cmd):**
+```bat
+run.bat
+```
+
+**Linux/Debian/macOS:**
 ```bash
+chmod +x run.sh   # first time only
+./run.sh
+```
+
+Both scripts create a local `.venv`, install dependencies, and start the server.
+Then open **http://localhost:8000**.
+
+Manual alternative (requires Python 3.10+):
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate     |  Debian: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload
-# open http://localhost:8000
 ```
+
+> **Debian note:** if `python -m venv` fails, install it first:
+> `sudo apt install python3-venv python3-pip`
+>
+> **Windows note:** always run `uvicorn` from inside this project folder (the one
+> containing `main.py`), otherwise you'll get
+> `Error loading ASGI app. Could not import module "main"`.
+> `run.bat` handles this automatically by changing to its own directory.
 
 ## Providers
 

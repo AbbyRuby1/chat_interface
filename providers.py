@@ -16,13 +16,33 @@ Providers supported:
 """
 
 import json
+import sys
 from typing import AsyncIterator
 
 import httpx
 
+
+def _is_local(hostname: str) -> bool:
+    return hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
+def _trust_env_for(url: str) -> bool:
+    """Only honour HTTP(S)_PROXY env vars for non-local endpoints.
+
+    Without this, a system-wide proxy (common on corporate Windows machines
+    and some Debian setups) would intercept requests to localhost Ollama /
+    LM Studio servers and break them.
+    """
+    try:
+        host = httpx.URL(url).host or ""
+    except Exception:  # noqa: BLE001
+        return True
+    return not _is_local(str(host))
+
+
 DEFAULT_BASE_URLS = {
-    "ollama": "http://localhost:11434",
-    "lmstudio": "http://localhost:1234/v1",
+    "ollama": "http://127.0.0.1:11434" if sys.platform == "win32" else "http://localhost:11434",
+    "lmstudio": ("http://127.0.0.1:1234/v1" if sys.platform == "win32" else "http://localhost:1234/v1"),
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com",
 }
@@ -43,7 +63,7 @@ def _norm_base(provider: str, base_url: str | None) -> str:
 async def list_models(provider: str, base_url: str | None = None,
                       api_key: str | None = None) -> list[str]:
     base = _norm_base(provider, base_url)
-    async with httpx.AsyncClient(timeout=8) as client:
+    async with httpx.AsyncClient(timeout=8, trust_env=_trust_env_for(base)) as client:
         if provider == "ollama":
             r = await client.get(f"{base}/api/tags")
             r.raise_for_status()
@@ -105,8 +125,9 @@ async def stream_chat(provider: str, model: str, messages: list[dict],
 
 async def _stream_ollama(base: str, model: str, messages: list[dict]) -> AsyncIterator[str]:
     payload = {"model": model, "messages": messages, "stream": True}
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream("POST", f"{base}/api/chat", json=payload) as resp:
+    url = f"{base}/api/chat"
+    async with httpx.AsyncClient(timeout=None, trust_env=_trust_env_for(url)) as client:
+        async with client.stream("POST", url, json=payload) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.strip():
@@ -131,10 +152,9 @@ async def _stream_openai_compat(base: str, model: str, messages: list[dict],
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     payload = {"model": model, "messages": messages, "stream": True}
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream(
-            "POST", f"{base}/chat/completions", json=payload, headers=headers
-        ) as resp:
+    url = f"{base}/chat/completions"
+    async with httpx.AsyncClient(timeout=None, trust_env=_trust_env_for(url)) as client:
+        async with client.stream("POST", url, json=payload, headers=headers) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 line = line.strip()
@@ -165,10 +185,9 @@ async def _stream_anthropic(base: str, model: str, messages: list[dict],
     if system:
         payload["system"] = system
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream(
-            "POST", f"{base}/v1/messages", json=payload, headers=headers
-        ) as resp:
+    url = f"{base}/v1/messages"
+    async with httpx.AsyncClient(timeout=None, trust_env=_trust_env_for(url)) as client:
+        async with client.stream("POST", url, json=payload, headers=headers) as resp:
             resp.raise_for_status()
             event = None
             async for line in resp.aiter_lines():
