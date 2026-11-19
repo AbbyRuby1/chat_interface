@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude-style Chat</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- ===== Sidebar (Claude desktop style) ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <button class="icon-btn" title="Toggle sidebar" onclick="toggleSidebar()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+        <button class="icon-btn" title="New chat" onclick="newChat()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <a class="side-item active" href="#">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M3 12c2.5-2.5 5.5-2.5 8 0M4 7a4 4 0 1 1 8 0 4 4 0 0 1-8 0z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          Chats
+        </a>
+        <a class="side-item" href="#">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          Projects
+        </a>
+        <a class="side-item" href="#">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M4 3h8M4 6.5h8M4 10h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          Artifacts
+        </a>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="history-label">Recents</div>
+        <div id="history"></div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <button class="upgrade-card" onclick="openSettings()">
+          <div class="upgrade-title">Connect a model</div>
+          <div class="upgrade-sub">Ollama, LM Studio,<br/>OpenAI or Anthropic</div>
+        </button>
+        <div class="user-row" onclick="openSettings()" title="Open settings">
+          <div class="avatar" id="providerAvatar">⚙</div>
+          <span class="user-name" id="providerLabel">Ollama</span>
+          <span class="plan-badge" id="providerBadge">local</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== Main area ===== -->
+    <main class="main">
+      <header class="topbar">
+        <select class="model-select" id="modelSelect">
+          <option value="">Load models…</option>
+        </select>
+        <button class="pill-btn" onclick="loadModels()" title="Refresh model list from the provider">↻ Models</button>
+        <button class="pill-btn" onclick="openSettings()">⚙ Settings</button>
+      </header>
+
+      <div class="chat-scroll" id="chatScroll">
+        <!-- Empty state / greeting, Claude style -->
+        <div class="empty-state" id="emptyState">
+          <div class="sunburst">✳</div>
+          <h1 class="greeting" id="greeting">Good afternoon, how can I help you today?</h1>
+          <div class="suggestions">
+            <button class="chip" onclick="usePrompt(this)">Write a function to…</button>
+            <button class="chip" onclick="usePrompt(this)">Explain this concept…</button>
+            <button class="chip" onclick="usePrompt(this)">Help me brainstorm ideas for…</button>
+            <button class="chip" onclick="usePrompt(this)">Summarize this article…</button>
+          </div>
+        </div>
+
+        <div class="messages" id="messages"></div>
+      </div>
+
+      <!-- Composer -->
+      <div class="composer-wrap">
+        <form class="composer" id="composerForm" onsubmit="return false;">
+          <textarea id="input" rows="1" placeholder="How can I help you today?" autofocus></textarea>
+          <div class="composer-row">
+            <div class="composer-left">
+              <button type="button" class="icon-btn" title="Attach files">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button type="button" class="pill-btn">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+                Style
+              </button>
+              <button type="button" class="pill-btn">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/>
+                  <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+                Search
+              </button>
+            </div>
+            <button type="submit" class="send-btn" id="sendBtn" title="Send">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 13V3M4 6.5L8 2.5l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </form>
+        <div class="fineprint">Powered by your own model — Ollama, LM Studio, OpenAI or Anthropic. Responses stream via FastAPI.</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== Settings modal ===== -->
+  <div class="modal-backdrop" id="settingsModal" style="display:none">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Model provider</h2>
+        <button class="icon-btn" onclick="closeSettings()">✕</button>
+      </div>
+
+      <label class="field-label">Provider</label>
+      <div class="provider-grid" id="providerGrid">
+        <button class="provider-card" data-provider="ollama">
+          <span class="p-name">Ollama</span><span class="p-sub">local · :11434</span>
+        </button>
+        <button class="provider-card" data-provider="lmstudio">
+          <span class="p-name">LM Studio</span><span class="p-sub">local · :1234</span>
+        </button>
+        <button class="provider-card" data-provider="openai">
+          <span class="p-name">OpenAI-compatible</span><span class="p-sub">API key</span>
+        </button>
+        <button class="provider-card" data-provider="anthropic">
+          <span class="p-name">Anthropic</span><span class="p-sub">API key</span>
+        </button>
+      </div>
+
+      <label class="field-label" for="baseUrlInput">Base URL <span class="hint">(leave blank for default)</span></label>
+      <input type="text" id="baseUrlInput" placeholder="http://localhost:11434" />
+
+      <div id="keyRow">
+        <label class="field-label" for="apiKeyInput">API key</label>
+        <input type="password" id="apiKeyInput" placeholder="sk-…" autocomplete="off" />
+        <div class="hint">Stored only in your browser's localStorage and sent to this local backend.</div>
+      </div>
+
+      <label class="field-label" for="modelManual">Model <span class="hint">(or load the list from the provider)</span></label>
+      <input type="text" id="modelManual" placeholder="e.g. llama3.2 / gpt-4o-mini / claude-sonnet-4-5" />
+
+      <div class="modal-status" id="modalStatus"></div>
+
+      <div class="modal-actions">
+        <button class="pill-btn" onclick="loadModels()">Test &amp; load models</button>
+        <button class="send-btn primary" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
