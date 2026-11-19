@@ -1,4 +1,5 @@
-/* Claude-style chat frontend — talks to the FastAPI /api/chat SSE endpoint. */
+/* Claude-style chat frontend — talks to the FastAPI /api/chat SSE endpoint.
+   Supports Ollama, LM Studio, OpenAI-compatible and Anthropic providers. */
 
 const el = {
   sidebar: document.getElementById("sidebar"),
@@ -11,12 +12,40 @@ const el = {
   sendBtn: document.getElementById("sendBtn"),
   greeting: document.getElementById("greeting"),
   modelSelect: document.getElementById("modelSelect"),
+  // settings modal
+  modal: document.getElementById("settingsModal"),
+  providerGrid: document.getElementById("providerGrid"),
+  baseUrlInput: document.getElementById("baseUrlInput"),
+  apiKeyInput: document.getElementById("apiKeyInput"),
+  keyRow: document.getElementById("keyRow"),
+  modelManual: document.getElementById("modelManual"),
+  modalStatus: document.getElementById("modalStatus"),
+  providerLabel: document.getElementById("providerLabel"),
+  providerBadge: document.getElementById("providerBadge"),
+};
+
+const PROVIDER_DEFAULTS = {
+  ollama:     { label: "Ollama",       badge: "local", url: "http://localhost:11434", needsKey: false },
+  lmstudio:   { label: "LM Studio",    badge: "local", url: "http://localhost:1234/v1", needsKey: false },
+  openai:     { label: "OpenAI-compat",badge: "api",   url: "https://api.openai.com/v1", needsKey: true },
+  anthropic:  { label: "Anthropic",    badge: "api",   url: "https://api.anthropic.com", needsKey: true },
 };
 
 // ---------- state ----------
 let conversations = JSON.parse(localStorage.getItem("chats") || "[]");
 let currentId = null;
 let busy = false;
+
+let settings = JSON.parse(localStorage.getItem("settings") || "null") || {
+  provider: "ollama",
+  baseUrl: "",        // blank = use default
+  apiKeys: {},        // per-provider keys, kept in browser localStorage
+  model: "",          // last chosen model
+};
+
+function persistSettings() {
+  localStorage.setItem("settings", JSON.stringify(settings));
+}
 
 // Greeting based on time of day, like Claude does
 (function setGreeting() {
@@ -160,12 +189,20 @@ async function send() {
   body.innerHTML = `<span class="thinking-dots"><span></span><span></span><span></span></span>`;
 
   let full = "";
+  let streamError = null;
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: conv.messages, model: el.modelSelect.value }),
+      body: JSON.stringify({
+        messages: conv.messages,
+        model: el.modelSelect.value || settings.model,
+        provider: settings.provider,
+        api_key: settings.apiKeys[settings.provider] || null,
+        base_url: settings.baseUrl || null,
+      }),
     });
+    if (!res.ok) throw new Error(await res.text());
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -184,23 +221,138 @@ async function send() {
         const payload = line.slice(5).trim();
         if (payload === "[DONE]") continue;
         try {
-          full += JSON.parse(payload).text;
+          const obj = JSON.parse(payload);
+          if (obj.error) { streamError = obj.error; continue; }
+          full += obj.text;
         } catch (_) {}
         body.innerHTML = renderMarkdown(full) + `<span class="cursor-blink"></span>`;
         scrollToBottom();
       }
     }
   } catch (err) {
-    full = full || "⚠️ Something went wrong talking to the backend. Is uvicorn running?";
+    streamError = String(err.message || err);
   }
 
-  body.innerHTML = renderMarkdown(full);
+  if (streamError && !full) {
+    body.innerHTML = `<p class="error-note">⚠️ ${escapeHtml(streamError)}<br/>` +
+      `Check your provider in <a href="#" onclick="openSettings();return false;">Settings</a>.</p>`;
+    // remove failed assistant turn from history so retry is clean
+    busy = false;
+    el.sendBtn.disabled = false;
+    el.input.focus();
+    return;
+  }
+
+  body.innerHTML = renderMarkdown(full) +
+    (streamError ? `<p class="error-note">⚠️ Stream interrupted: ${escapeHtml(streamError)}</p>` : "");
   conv.messages.push({ role: "assistant", content: full });
   save();
   busy = false;
   el.sendBtn.disabled = false;
   el.input.focus();
 }
+
+// ---------- provider settings ----------
+function openSettings() {
+  el.modal.style.display = "flex";
+  highlightProvider();
+  el.baseUrlInput.value = settings.baseUrl || "";
+  el.apiKeyInput.value = settings.apiKeys[settings.provider] || "";
+  el.modelManual.value = settings.model || "";
+  el.modalStatus.textContent = "";
+  el.keyRow.style.display = PROVIDER_DEFAULTS[settings.provider].needsKey ? "" : "none";
+}
+
+function closeSettings() {
+  el.modal.style.display = "none";
+}
+
+function highlightProvider() {
+  document.querySelectorAll(".provider-card").forEach((c) => {
+    c.classList.toggle("active", c.dataset.provider === settings.provider);
+  });
+  const d = PROVIDER_DEFAULTS[settings.provider];
+  el.providerLabel.textContent = d.label;
+  el.providerBadge.textContent = d.badge;
+  el.baseUrlInput.placeholder = d.url;
+  el.keyRow.style.display = d.needsKey ? "" : "none";
+}
+
+document.querySelectorAll(".provider-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    settings.provider = card.dataset.provider;
+    highlightProvider();
+    el.modalStatus.textContent = "";
+  });
+});
+
+async function loadModels() {
+  el.modalStatus.textContent = "Connecting…";
+  try {
+    const res = await fetch("/api/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: settings.provider,
+        api_key: settings.apiKeys[settings.provider] || null,
+        base_url: el.baseUrlInput.value.trim() || settings.baseUrl || null,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const { models } = await res.json();
+    if (!models.length) throw new Error("No models found. Pull one in Ollama or load one in LM Studio first.");
+
+    settings.baseUrl = el.baseUrlInput.value.trim();
+    persistSettings();
+
+    el.modelSelect.innerHTML = "";
+    for (const m of models) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      el.modelSelect.appendChild(opt);
+    }
+    if (models.includes(settings.model)) el.modelSelect.value = settings.model;
+    else settings.model = models[0], el.modelSelect.value = models[0];
+
+    el.modalStatus.textContent = `✓ Connected — ${models.length} model(s) loaded.`;
+  } catch (e) {
+    el.modelSelect.innerHTML = `<option value="">${escapeHtml(el.modelManual.value || "manual model")}</option>`;
+    el.modalStatus.textContent = `✗ ${e.message}`;
+  }
+}
+
+function saveSettings() {
+  settings.baseUrl = el.baseUrlInput.value.trim();
+  const key = el.apiKeyInput.value.trim();
+  if (key) settings.apiKeys[settings.provider] = key;
+  const manual = el.modelManual.value.trim();
+  if (manual) {
+    settings.model = manual;
+    const exists = [...el.modelSelect.options].some((o) => o.value === manual);
+    if (!exists) {
+      const opt = document.createElement("option");
+      opt.value = manual;
+      opt.textContent = manual;
+      el.modelSelect.appendChild(opt);
+    }
+    el.modelSelect.value = manual;
+  }
+  persistSettings();
+  closeSettings();
+}
+
+el.modal.addEventListener("click", (e) => {
+  if (e.target === el.modal) closeSettings();
+});
+
+el.modelSelect.addEventListener("change", () => {
+  settings.model = el.modelSelect.value;
+  persistSettings();
+});
 
 // ---------- composer wiring ----------
 el.form.addEventListener("submit", (e) => {
@@ -222,3 +374,16 @@ function autoGrow() {
 el.input.addEventListener("input", autoGrow);
 
 renderHistory();
+highlightProvider();
+
+// On load: if we have a saved model, try to populate the picker from the provider.
+(async function initModels() {
+  if (settings.model) {
+    el.modelSelect.innerHTML = `<option value="${escapeHtml(settings.model)}">${escapeHtml(settings.model)}</option>`;
+  }
+  try {
+    await loadModels();
+  } catch (_) {
+    /* offline / provider not running — manual model still selectable */
+  }
+})();
