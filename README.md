@@ -20,6 +20,7 @@ Both scripts create a local `.venv`, install dependencies, and start the server.
 Then open **http://localhost:8000**.
 
 Manual alternative (requires Python 3.10+):
+Note if doesn't work run the SH or bats files
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate     |  Debian: source .venv/bin/activate
