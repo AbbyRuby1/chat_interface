@@ -3,6 +3,12 @@
 A Claude-desktop-style chat UI with a FastAPI backend that works with
 **local runtimes (Ollama, LM Studio)** and **hosted APIs (OpenAI-compatible, Anthropic)**.
 
+CD into the path or click the files to set everything up automatically
+
+## CD
+```bash
+cd (enter in the path)
+```
 ## Run
 
 **Windows (PowerShell or cmd):**
