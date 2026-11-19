@@ -374,10 +374,26 @@ function autoGrow() {
 el.input.addEventListener("input", autoGrow);
 
 renderHistory();
-highlightProvider();
 
-// On load: if we have a saved model, try to populate the picker from the provider.
-(async function initModels() {
+// On load: ask the backend which provider default fits this OS
+// (LM Studio is common on Windows, Ollama on Linux/Debian), then apply it
+// only if the user hasn't explicitly configured a provider before.
+(async function initConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      const cfg = await res.json();
+      const hadSaved = localStorage.getItem("settings") !== null;
+      if (!hadSaved && cfg.default_provider && PROVIDER_DEFAULTS[cfg.default_provider]) {
+        settings.provider = cfg.default_provider;
+      }
+    }
+  } catch (_) {
+    /* backend config endpoint unavailable — keep bundled default */
+  }
+  highlightProvider();
+
+  // If we have a saved model, try to populate the picker from the provider.
   if (settings.model) {
     el.modelSelect.innerHTML = `<option value="${escapeHtml(settings.model)}">${escapeHtml(settings.model)}</option>`;
   }
